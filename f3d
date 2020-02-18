@@ -8,6 +8,10 @@ create_pr() {
 	PR_URL=$($GH_CLI pr create -B $1 -b "$2" -t "$3")
 }
 
+set_current_branch(){
+	CURRENT_BRANCH=$($GIT branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+}
+
 check_git_status() {
 	git_status=$($GIT status -s)
 	if [ -z "${git_status}" ]
@@ -30,7 +34,7 @@ sub_help(){
 }
 
 sub_push_hotfix(){
-	# check_git_status
+	check_git_status
 
 	case "${1}" in
 		-t|--title)
@@ -44,7 +48,7 @@ sub_push_hotfix(){
 	esac
 	shift
 
-	CURRENT_BRANCH=$($GIT branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+	set_current_branch
 
 	if [ $CURRENT_BRANCH = "master" ] || [[ $CURRENT_BRANCH =~ "develop" ]]; then
 		echo "You need to be on your hotfix branch to push it"
@@ -55,15 +59,15 @@ sub_push_hotfix(){
 
 	DIFF=$($GIT log --reverse origin/master..$CURRENT_BRANCH --oneline --no-decorate --first-parent | nl -w2 -s'. ')
 
-	echo "CREATING 2 PRS with title '$PR_TITLE'"
-	# create_pr "develop" "$DIFF" "$PR_TITLE"
-	# create_pr "master" "$DIFF${NL}PR to develop: $PR_URL" "$PR_TITLE"
+	create_pr "develop" "$DIFF" "$PR_TITLE"
+	create_pr "master" "$DIFF${NL}PR to develop: $PR_URL" "$PR_TITLE"
 }
 
 sub_prepare_release(){
-	# check_git_status
+	check_git_status
 
-	while [ $# -gt 0 ]; do
+	if [ $# -gt 0 ]
+	then
 		case "${1}" in
 			--in)
 				RELEASE_IN="${2}"
@@ -75,7 +79,9 @@ sub_prepare_release(){
 				exit 1
 		esac
 		shift
-	done
+	fi
+
+	set_current_branch
 
 	if [ "$CURRENT_BRANCH" != "develop" ]
 	then
@@ -89,7 +95,7 @@ sub_prepare_release(){
 	RELEASE_BRANCH="release/${RELEASE_DATE}"
 
 	$GIT checkout -b $RELEASE_BRANCH
-	# $GIT push origin $RELEASE_BRANCH
+	$GIT push origin $RELEASE_BRANCH
 
 	$GIT remote update
 
@@ -99,8 +105,7 @@ sub_prepare_release(){
 	echo "$DIFF"
 	echo ""
 
-	echo "creating pr"
-	# create_pr "master" "$DIFF" "[Release] $RELEASE_DATE"
+	create_pr "master" "$DIFF" "[Release] $RELEASE_DATE"
 }
 
 subcommand=$1
