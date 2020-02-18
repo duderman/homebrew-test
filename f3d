@@ -1,0 +1,120 @@
+#!/bin/sh
+
+GIT=$(which git)
+GH_CLI=$(which gh)
+NL=$'\n\n'
+
+create_pr() {
+	PR_URL=$($GH_CLI pr create -B $1 -b "$2" -t "$3")
+}
+
+check_git_status() {
+	# Exit if changes are not commited
+	git_status=$($GIT status -s)
+	if [ -z "${git_status}" ] # changes not commited
+	then
+		echo 'Creating Hotfix PRs'
+	else
+		echo "You need to commit your changes before pushing the hotfix"
+		exit 1
+	fi;
+
+}
+
+progname=$(basename $0)
+
+sub_help(){
+	echo "Usage: $progname <subcommand> [options]\n"
+	echo "Subcommands:"
+	echo "    push_hotfix       Creates 2 PRs with the hotfix"
+	echo "    prepare_release   Creates a release PR to master"
+	echo ""
+}
+
+sub_push_hotfix(){
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--title=*)
+				PR_TITLE="${1#*=}"
+				;;
+			*)
+				echo "Error: Invalid argument. Only --title= is supported."
+				echo ""
+
+				exit 1
+		esac
+		shift
+	done
+
+	check_git_status
+
+	CURRENT_BRANCH=$($GIT branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+
+	# Exit with if hotfixing on master or develop
+	if [ $CURRENT_BRANCH = "master" ] || [[ $CURRENT_BRANCH =~ "develop" ]]; then
+		echo "You need to be on your hotfix branch to push it"
+		exit 1
+	fi
+
+	$GIT remote update
+
+	DIFF=$($GIT log --reverse origin/master..$CURRENT_BRANCH --oneline --no-decorate --first-parent | nl -w2 -s'. ')
+
+	echo "CREATING 2 PRS"
+	# create_pr "develop" "$DIFF" "$PR_TITLE"
+	# create_pr "master" "$DIFF${NL}PR to develop: $PR_URL" "$PR_TITLE"
+}
+
+sub_prepare_release(){
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--in=*)
+				RELEASE_IN="${1#*=}"
+				;;
+			*)
+				echo "Error: Invalid argument. --in= supported only"
+				echo ""
+
+				exit 1
+		esac
+		shift
+	done
+
+	: ${RELEASE_IN:="0d"}
+
+	RELEASE_DATE=$(date -v +$RELEASE_IN +%Y-%m-%d)
+	echo $RELEASE_DATE
+	RELEASE_BRANCH="release/${RELEASE_DATE}"
+	echo $RELEASE_BRANCH
+
+	# $GIT checkout -b $RELEASE_BRANCH
+	$GIT push origin $RELEASE_BRANCH
+
+	$GIT remote update
+
+	DIFF=$($GIT log --reverse origin/master..$RELEASE_BRANCH --oneline --no-decorate --first-parent | nl -w2 -s'. ')
+
+	echo "Deploy log:"
+	echo "$DIFF"
+	echo ""
+
+	echo "creating pr"
+
+	# create_pr "master" "$DIFF" "[Release] $RELEASE_DATE"
+}
+
+subcommand=$1
+case $subcommand in
+	"" | "-h" | "--help")
+		sub_help
+		;;
+	*)
+		shift
+		sub_${subcommand} $@
+		if [ $? = 127 ]; then
+			echo "Error: '$subcommand' is not a known subcommand." >&2
+			echo "       Run '$progname --help' for a list of known subcommands." >&2
+			exit 1
+		fi
+		;;
+esac
