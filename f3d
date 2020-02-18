@@ -9,16 +9,14 @@ create_pr() {
 }
 
 check_git_status() {
-	# Exit if changes are not commited
 	git_status=$($GIT status -s)
-	if [ -z "${git_status}" ] # changes not commited
+	if [ -z "${git_status}" ]
 	then
 		echo 'Creating Hotfix PRs'
 	else
 		echo "You need to commit your changes before pushing the hotfix"
 		exit 1
 	fi;
-
 }
 
 progname=$(basename $0)
@@ -32,25 +30,22 @@ sub_help(){
 }
 
 sub_push_hotfix(){
-	while [ $# -gt 0 ]; do
-		case "$1" in
-			--title=*)
-				PR_TITLE="${1#*=}"
-				;;
-			*)
-				echo "Error: Invalid argument. Only --title= is supported."
-				echo ""
+	# check_git_status
 
-				exit 1
-		esac
-		shift
-	done
+	case "${1}" in
+		-t|--title)
+			PR_TITLE="${2}"
+			;;
+		*)
+			echo "Error: Invalid or missing argument. Only --title (-t) is supported."
+			echo ""
 
-	check_git_status
+			exit 1
+	esac
+	shift
 
 	CURRENT_BRANCH=$($GIT branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 
-	# Exit with if hotfixing on master or develop
 	if [ $CURRENT_BRANCH = "master" ] || [[ $CURRENT_BRANCH =~ "develop" ]]; then
 		echo "You need to be on your hotfix branch to push it"
 		exit 1
@@ -60,19 +55,21 @@ sub_push_hotfix(){
 
 	DIFF=$($GIT log --reverse origin/master..$CURRENT_BRANCH --oneline --no-decorate --first-parent | nl -w2 -s'. ')
 
-	echo "CREATING 2 PRS"
+	echo "CREATING 2 PRS with title '$PR_TITLE'"
 	# create_pr "develop" "$DIFF" "$PR_TITLE"
 	# create_pr "master" "$DIFF${NL}PR to develop: $PR_URL" "$PR_TITLE"
 }
 
 sub_prepare_release(){
+	# check_git_status
+
 	while [ $# -gt 0 ]; do
-		case "$1" in
-			--in=*)
-				RELEASE_IN="${1#*=}"
+		case "${1}" in
+			--in)
+				RELEASE_IN="${2}"
 				;;
 			*)
-				echo "Error: Invalid argument. --in= supported only"
+				echo "Error: Invalid argument. Only --in is supported"
 				echo ""
 
 				exit 1
@@ -80,15 +77,19 @@ sub_prepare_release(){
 		shift
 	done
 
+	if [ "$CURRENT_BRANCH" != "develop" ]
+	then
+		echo "You have to be on develop branch to create a release PR"
+		exit 1
+	fi
+
 	: ${RELEASE_IN:="0d"}
 
 	RELEASE_DATE=$(date -v +$RELEASE_IN +%Y-%m-%d)
-	echo $RELEASE_DATE
 	RELEASE_BRANCH="release/${RELEASE_DATE}"
-	echo $RELEASE_BRANCH
 
-	# $GIT checkout -b $RELEASE_BRANCH
-	$GIT push origin $RELEASE_BRANCH
+	$GIT checkout -b $RELEASE_BRANCH
+	# $GIT push origin $RELEASE_BRANCH
 
 	$GIT remote update
 
@@ -99,7 +100,6 @@ sub_prepare_release(){
 	echo ""
 
 	echo "creating pr"
-
 	# create_pr "master" "$DIFF" "[Release] $RELEASE_DATE"
 }
 
